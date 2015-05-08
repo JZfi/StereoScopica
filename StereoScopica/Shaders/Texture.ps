@@ -1,0 +1,76 @@
+﻿//////////////////////
+////   GLOBALS
+//////////////////////
+Texture2D shaderTexture0;
+Texture2D shaderTexture1;
+SamplerState SampleType;
+
+cbuffer SettingsBuffer
+{
+	float flags;
+	float unused;
+	float2 brightnessCoeffs;
+};
+
+//////////////////////
+////   TYPEDEFS
+//////////////////////
+struct PixelInputType
+{
+	float4 position : SV_POSITION;
+	float2 tex : TEXCOORD0;
+};
+
+//////////////////////
+////   Pixel Shader
+/////////////////////
+float4 TexturePixelShader(PixelInputType input) : SV_TARGET
+{
+	float4 color, texColor0, texColor1;
+	float2 coordinates = input.tex;
+	bool eye = fmod(flags, 2) == 1;
+	bool isMirrored0 = fmod(flags, 4) >= 2;
+	bool isMirrored1 = fmod(flags, 8) >= 4;
+	bool calibrationMode = fmod(flags, 16) >= 8;
+
+	// Mirror the texture coordinates x-axis if the image is mirrored
+	if (isMirrored0)
+		coordinates.x = 1.0f - coordinates.x;
+		
+	// Sample the pixel color from the texture using the sampler at this texture coordinate location.
+	texColor0 = shaderTexture0.Sample(SampleType, coordinates);
+
+	// Unmirror the x-axis if it was already mirrored and the second image is not mirrored
+	if ((isMirrored0 && !isMirrored1) || (!isMirrored0 && isMirrored1))
+		coordinates.x = 1.0f - coordinates.x;
+
+	// Sample the pixel color from the texture using the sampler at this texture coordinate location.
+	texColor1 = shaderTexture1.Sample(SampleType, coordinates);
+
+	if (calibrationMode)
+	{
+		// Show the difference between the images (black == identical pixels)
+		// Left & right are inverse just to see the differences better
+		if (eye == 0)
+			color = texColor0 - texColor1;
+		else
+			color = texColor1 - texColor0;
+		// Ignore the brightness coefficient when in calibration mode
+	}
+	else
+	{
+		// Eye 0 is the left image
+		if (eye == 0)
+			color = texColor0;
+		else
+			color = texColor1;
+
+		// Darken or lighten the image
+		color *= brightnessCoeffs[eye];
+
+		// Reset alpha as the previous operation also affects the alpha channel
+		color.a = 1.0f;
+	}
+
+	return color;
+}
