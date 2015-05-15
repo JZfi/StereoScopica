@@ -12,7 +12,8 @@ using System.Linq;
 using SharpDX;
 using SharpDX.Direct3D11;
 using SharpDX.Toolkit;
-using SharpOVR; // SharpOVR extends the Matrix class
+// SharpOVR also extends the Matrix class. The HMD is handled in the Renderer class
+using SharpOVR; 
 
 namespace StereoScopica
 {
@@ -83,18 +84,13 @@ namespace StereoScopica
                 foreach (TexturedPlane plane in ImagePlane)
                 {
                     plane.Initialize(GraphicsDevice);
-                    plane.InitializeShader(
-                        GraphicsDevice,
-                        Path.Combine("Shaders", "Texture.vs"),
-                        Path.Combine("Shaders", "Texture.ps")
-                        );
+                    plane.InitializeShader(GraphicsDevice, UISettings.TextureVertexShader, UISettings.TexturePixelShader);
                 }
             }
             catch (Exception ex)
             {
                 FatalError(ex.Message);
             }
-
             base.LoadContent();
         }
 
@@ -107,8 +103,15 @@ namespace StereoScopica
                 {
                     //+Z values are "away from the plane looking at the plane", -Z values are behind the plane
                     HeadPositionRelativeToPlane = new Vector3(0f, 0f, 1.5f),
+                    PlaneXYNudgeAmount = 0.0025f,
+                    HeadZNudgeAmount = 0.025f,
+                    BrightnessNudgeAmount = 0.05f,
+                    TexturePixelShader = Path.Combine("Shaders", "Texture.ps"),
+                    TextureVertexShader = Path.Combine("Shaders", "Texture.vs"),
                     TestImageLeft = Path.Combine("Assets", "TestL.jpg"),
-                    TestImageRight = Path.Combine("Assets", "TestR.jpg")
+                    TestImageRight = Path.Combine("Assets", "TestR.jpg"),
+                    SaveImageLeft = "imageL.jpg",
+                    SaveImageRight = "imageR.jpg"
                 };
                 // Create two camera handlers and image planes
                 for (uint i = 0; i < ImagePlane.Length; i++)
@@ -153,11 +156,6 @@ namespace StereoScopica
         // Register UI key actions
         protected void RegisterKeyActions()
         {
-            // How much the values are altered on each keypress
-            const float planeXYNudgeAmount = 0.0025f;
-            const float headZNudgeAmount = 0.025f;
-            const float brightnessNudgeAmount = 0.05f;
-
             // Moves the image planes towards or away from each other
             var moveImagePlanes = new Action<Matrix>(translation =>
             {
@@ -176,32 +174,32 @@ namespace StereoScopica
             UISettings.KeyActions[Keys.End] = () => { UISettings.DoNotUpdateHeadPositionAndOrientation = !UISettings.DoNotUpdateHeadPositionAndOrientation; };
 
             // Nudge the images away from each other along the X-axis
-            UISettings.KeyActions[Keys.Left] = () => moveImagePlanes(Matrix.Translation(-planeXYNudgeAmount, 0f, 0f));
+            UISettings.KeyActions[Keys.Left] = () => moveImagePlanes(Matrix.Translation(-UISettings.PlaneXYNudgeAmount, 0f, 0f));
             // Nudge the images towards each other along the X-axis
-            UISettings.KeyActions[Keys.Right] = () => moveImagePlanes(Matrix.Translation(planeXYNudgeAmount, 0f, 0f));
+            UISettings.KeyActions[Keys.Right] = () => moveImagePlanes(Matrix.Translation(UISettings.PlaneXYNudgeAmount, 0f, 0f));
             // Nudge the images away from each other along the Y-axis
-            UISettings.KeyActions[Keys.Up] = () => moveImagePlanes(Matrix.Translation(0f, -planeXYNudgeAmount, 0f));
+            UISettings.KeyActions[Keys.Up] = () => moveImagePlanes(Matrix.Translation(0f, UISettings.PlaneXYNudgeAmount, 0f));
             // Nudge the images towards each other along the Y-axis
-            UISettings.KeyActions[Keys.Down] = () => moveImagePlanes(Matrix.Translation(0f, -planeXYNudgeAmount, 0f));
+            UISettings.KeyActions[Keys.Down] = () => moveImagePlanes(Matrix.Translation(0f, -UISettings.PlaneXYNudgeAmount, 0f));
 
             // Move the head away from the plane
-            UISettings.KeyActions[Keys.PageUp] = () => UISettings.HeadPositionRelativeToPlane.Z += headZNudgeAmount;
+            UISettings.KeyActions[Keys.PageUp] = () => UISettings.HeadPositionRelativeToPlane.Z += UISettings.HeadZNudgeAmount;
             // Move the head towards the plane
-            UISettings.KeyActions[Keys.PageDown] = () => UISettings.HeadPositionRelativeToPlane.Z -= headZNudgeAmount;
+            UISettings.KeyActions[Keys.PageDown] = () => UISettings.HeadPositionRelativeToPlane.Z -= UISettings.HeadZNudgeAmount;
 
             // Left image brightness multiplier down
-            UISettings.KeyActions[Keys.F1] = () => ImagePlane[0].Brightness -= brightnessNudgeAmount;
+            UISettings.KeyActions[Keys.F1] = () => ImagePlane[0].Brightness -= UISettings.BrightnessNudgeAmount;
             // Left image brightness multiplier up
-            UISettings.KeyActions[Keys.F2] = () => ImagePlane[0].Brightness += brightnessNudgeAmount;
+            UISettings.KeyActions[Keys.F2] = () => ImagePlane[0].Brightness += UISettings.BrightnessNudgeAmount;
             // Reset left image brightness
             UISettings.KeyActions[Keys.F3] = () => ImagePlane[0].Brightness = 1f;
             // Toggle left image mirroring
             UISettings.KeyActions[Keys.F4] = () => ImagePlane[0].IsImageMirrored = !ImagePlane[0].IsImageMirrored;
 
             // Right image brightness multiplier down
-            UISettings.KeyActions[Keys.F5] = () => ImagePlane[1].Brightness -= brightnessNudgeAmount;
+            UISettings.KeyActions[Keys.F5] = () => ImagePlane[1].Brightness -= UISettings.BrightnessNudgeAmount;
             // Right image brightness multiplier up
-            UISettings.KeyActions[Keys.F6] = () => ImagePlane[1].Brightness += brightnessNudgeAmount;
+            UISettings.KeyActions[Keys.F6] = () => ImagePlane[1].Brightness += UISettings.BrightnessNudgeAmount;
             // Reset right image brightness
             UISettings.KeyActions[Keys.F7] = () => ImagePlane[1].Brightness = 1f;
             // Toggle right image mirroring
@@ -332,8 +330,8 @@ namespace StereoScopica
                     {
                         var fs = new FileStream(
                             (UISettings.SwapImageSources == Convert.ToBoolean(i))
-                                ? "imageL.jpg"
-                                : "imageR.jpg",
+                                ? UISettings.SaveImageLeft
+                                : UISettings.SaveImageRight,
                             FileMode.Create,
                             FileAccess.Write
                             );

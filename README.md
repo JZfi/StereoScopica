@@ -1,5 +1,9 @@
 StereoScopica
 =============
+Version 1.0.1
+- Bugfix: The up-key had a sign error and did the same thing as the down-key.
+- All constant values and filenames are now present in the settings file
+
 
 Wut?
 ----
