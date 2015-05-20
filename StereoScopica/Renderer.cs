@@ -79,7 +79,7 @@ namespace StereoScopica
 
             // Configure the HMD's rendering settings
             EyeRenderDesc = new EyeRenderDesc[2];
-            if (!HMD.ConfigureRendering(d3D11Cfg, /*DistortionCapabilities.Chromatic |*/ DistortionCapabilities.TimeWarp, HMD.DefaultEyeFov, EyeRenderDesc))
+            if (!HMD.ConfigureRendering(d3D11Cfg, DistortionCapabilities.Chromatic | DistortionCapabilities.TimeWarp, HMD.DefaultEyeFov, EyeRenderDesc))
                 throw new Exception("Failed to configure HMD");
 
             // IPD
