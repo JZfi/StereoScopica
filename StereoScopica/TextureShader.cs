@@ -10,7 +10,6 @@
 using System;
 using System.Runtime.InteropServices;
 using SharpDX;
-using SharpDX.D3DCompiler;
 using SharpDX.Direct3D11;
 using SharpDX.DXGI;
 using Buffer = SharpDX.Direct3D11.Buffer;
@@ -59,20 +58,17 @@ namespace StereoScopica
 		SamplerState SampleState { get; set; }
         Buffer ConstantSettingsBuffer { get; set; }
 
-	    public void Initialize(Device device, string vsFileName, string psFileName)
+	    private bool _initialized;
+
+	    public void Initialize(Device device, byte[] vertexShaderByteCode, byte[] pixelShaderByteCode)
         {
             try
             {
-                // Compile the vertex shader code.
-                var vertexShaderByteCode = ShaderBytecode.CompileFromFile(vsFileName, "TextureVertexShader", "vs_4_0");
-                // Compile the pixel shader code.
-                var pixelShaderByteCode = ShaderBytecode.CompileFromFile(psFileName, "TexturePixelShader", "ps_4_0");
-
                 // Create the vertex shader from the buffer.
                 VertexShader = new VertexShader(device, vertexShaderByteCode);
                 // Create the pixel shader from the buffer.
                 PixelShader = new PixelShader(device, pixelShaderByteCode);
-
+                
                 // Now setup the layout of the data that goes into the shader.
                 // This setup needs to match the VertexType structure in the Model and in the shader.
                 var inputElements = new[]
@@ -100,11 +96,7 @@ namespace StereoScopica
 				};
 
                 // Create the vertex input the layout.
-                Layout = new InputLayout(device, ShaderSignature.GetInputSignature(vertexShaderByteCode), inputElements);
-
-                // Release the vertex and pixel shader buffers, since they are no longer needed.
-                vertexShaderByteCode.Dispose();
-                pixelShaderByteCode.Dispose();
+                Layout = new InputLayout(device, vertexShaderByteCode, inputElements);
 
                 // Setup the description of the dynamic matrix constant buffer that is in the vertex shader.
                 var matrixBufferDesc = new BufferDescription()
@@ -151,10 +143,8 @@ namespace StereoScopica
 
                 // Create the constant buffer pointer so we can access the pixel shader constant buffer from within this class.
                 ConstantSettingsBuffer = new Buffer(device, settingsBufferDesc);
-            }
-            catch (CompilationException ex)
-            {
-                throw new Exception("Could not compile the file: " + ex.Message);
+
+                _initialized = true;
             }
             catch (Exception ex)
             {
@@ -164,6 +154,9 @@ namespace StereoScopica
 
         public void Render(DeviceContext deviceContext, int indexCount, Matrix world, Matrix view, Matrix projection, float flags, Vector2 brightnessCoeffs)
         {
+            if (!_initialized)
+                throw new Exception("The shader has not been initialized.");
+
             // Set the shader parameters that it will use for rendering.
             SetShaderParameters(deviceContext, world, view, projection, flags, brightnessCoeffs);
 
@@ -218,9 +211,6 @@ namespace StereoScopica
 
 				// Finally set the constant buffer in the vertex shader with the updated values.
 				deviceContext.VertexShader.SetConstantBuffer(bufferNumber, ConstantMatrixBuffer);
-
-				// Set shader resource in the pixel shader.
-				//deviceContext.PixelShader.SetShaderResource(0, texture);
 
                 // Lock the settings constant buffer so it can be written to.
                 deviceContext.MapSubresource(ConstantSettingsBuffer, MapMode.WriteDiscard, MapFlags.None, out mappedResource);

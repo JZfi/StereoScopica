@@ -41,6 +41,9 @@ namespace StereoScopica
         // The plane's texture on the gpu
         [XmlIgnore]
         public Texture2D Texture { get; private set; }
+        // Shader instance
+        [XmlIgnore]
+        public TextureShader TextureShader { get; set; }
 
         // Internal variables
         private float _brightness;
@@ -48,7 +51,7 @@ namespace StereoScopica
         private readonly object _textureLock = new object();
         // Flag to update the texture from the image property
         private bool _imageUpdated;
-        protected TextureShader TextureShader { get; private set; }
+
         private bool _disposed;
 
         public TexturedPlane()
@@ -57,15 +60,6 @@ namespace StereoScopica
             Transformation = Matrix.Translation(0f, 0f, 0f);
             _brightness = 1.0f;
             IsImageMirrored = false;
-        }
-        
-        // Compiles and initializes the provided vertex & pixel shaders
-        public void InitializeShader(Device device, string vsFileName, string psFileName)
-        {
-            if (TextureShader != null)
-                TextureShader.Dispose();
-            TextureShader = new TextureShader();
-            TextureShader.Initialize(device, vsFileName, psFileName);
         }
 
         // SetImage() updates the Image property and flags the image as updated (thread safe).
@@ -156,8 +150,9 @@ namespace StereoScopica
             // Send plane vertices to the GPU
             base.Render(deviceContext);
 
-            // Render the image onto the plane 
-            TextureShader.Render(deviceContext, IndexCount, Transformation, world, projection, flags, brightnessCoeffs); 
+            // Render the image onto the plane if we have a shader
+            if (TextureShader != null)
+                TextureShader.Render(deviceContext, IndexCount, Transformation, world, projection, flags, brightnessCoeffs); 
         }
 
         protected override void Dispose(bool disposing)
@@ -169,7 +164,7 @@ namespace StereoScopica
             {
                 if (Image != null) Image.Dispose();
                 if (Texture != null) Texture.Dispose();
-                if (TextureShader != null) TextureShader.Dispose();
+                //if (TextureShader != null) TextureShader.Dispose();
                 FPS = null;
             }
             _disposed = true;

@@ -12,6 +12,7 @@ using System.Linq;
 using SharpDX;
 using SharpDX.Direct3D11;
 using SharpDX.Toolkit;
+using SharpDX.D3DCompiler;
 // SharpOVR also extends the Matrix class. The HMD is handled in the Renderer class
 using SharpOVR; 
 
@@ -31,6 +32,8 @@ namespace StereoScopica
         protected CameraHandler[] CameraHandler { get; private set; }
         // Camera settings used by the camera handlers
         protected CameraSettings[] CameraSettings { get; private set; }
+        // The shader shared by both texture planes
+        protected TextureShader TextureShader { get; private set; }
         protected KeyboardManager Keyboard { get; private set; }
         protected GraphicsDeviceManager GraphicsDeviceManager { get; private set; }
         private bool _disposed;
@@ -81,11 +84,16 @@ namespace StereoScopica
         {
             try
             {
+                // Initialize the planes
                 foreach (TexturedPlane plane in ImagePlane)
-                {
                     plane.Initialize(GraphicsDevice);
-                    plane.InitializeShader(GraphicsDevice, UISettings.TextureVertexShader, UISettings.TexturePixelShader);
-                }
+
+                // Initializes & compiles the shader and assigns it to the planes
+                ReloadPlaneShaders();
+            }
+            catch (CompilationException ex)
+            {
+                FatalError("Could not compile the shader file " + ex.Message);
             }
             catch (Exception ex)
             {
@@ -153,6 +161,36 @@ namespace StereoScopica
             Properties.Settings.Default.Save();
         }
 
+        // (Re)loads the plane shaders
+        protected void ReloadPlaneShaders()
+        {
+            // Set the planes' shader to null to disable the render call to the (nonexistent) shader
+            foreach (TexturedPlane plane in ImagePlane)
+                plane.TextureShader = null;
+
+            InitializeAndCompileTextureShader();
+
+            // Reset the planes' shader to start drawing again
+            foreach (TexturedPlane plane in ImagePlane)
+                plane.TextureShader = TextureShader;
+        }
+
+        // (Re)initializes the TextureShader and compiles the shader files
+        protected void InitializeAndCompileTextureShader()
+        {
+            // Dispose the old shader resources if we want to reload the shader
+            if (TextureShader != null)
+            {
+                TextureShader.Dispose();
+                TextureShader = null; // Needed
+            }
+            TextureShader = new TextureShader();
+            // Compile the texture shader
+            using (var vertexShaderByteCode = ShaderBytecode.CompileFromFile(UISettings.TextureVertexShader, "TextureVertexShader", "vs_4_0"))
+            using (var pixelShaderByteCode = ShaderBytecode.CompileFromFile(UISettings.TexturePixelShader, "TexturePixelShader", "ps_4_0"))
+                TextureShader.Initialize(GraphicsDevice, vertexShaderByteCode, pixelShaderByteCode);
+        }
+
         // Register UI key actions
         protected void RegisterKeyActions()
         {
@@ -172,6 +210,8 @@ namespace StereoScopica
             UISettings.KeyActions[Keys.Home] = () => { UISettings.CalibrationMode = !UISettings.CalibrationMode; };
             // Reset the head position and stop updating it (from HMD data)
             UISettings.KeyActions[Keys.End] = () => { UISettings.DoNotUpdateHeadPositionAndOrientation = !UISettings.DoNotUpdateHeadPositionAndOrientation; };
+            // Reload the shaders
+            UISettings.KeyActions[Keys.Delete] = ReloadPlaneShaders;
 
             // Nudge the images away from each other along the X-axis
             UISettings.KeyActions[Keys.Left] = () => moveImagePlanes(Matrix.Translation(-UISettings.PlaneXYNudgeAmount, 0f, 0f));
@@ -236,36 +276,42 @@ namespace StereoScopica
         {
             base.Draw(gameTime);
             GraphicsDevice.Clear(Color.Black);
-
-            for (var i = 0; i < ImagePlane.Length; i++)
+            try
             {
-                // Transfer the buffered (received) image from the camera to the texture in the GPU's memory
-                ImagePlane[i].RefreshAndTransferTexture(GraphicsDevice);
-                // Set the texture to the specific texture slot for the shader
-                ((DeviceContext)GraphicsDevice).PixelShader.SetShaderResource(i, ImagePlane[i].Texture);
+                for (var i = 0; i < ImagePlane.Length; i++)
+                {
+                    // Transfer the buffered (received) image from the camera to the texture in the GPU's memory
+                    ImagePlane[i].RefreshAndTransferTexture(GraphicsDevice);
+                    // Set the texture to the specific texture slot for the shader
+                    ((DeviceContext) GraphicsDevice).PixelShader.SetShaderResource(i, ImagePlane[i].Texture);
+                }
+
+                // Loop over both eyes
+                foreach (int eyeIndex in Renderer.GetEyeIndex())
+                {
+                    // Set Viewport for this eye
+                    GraphicsDevice.SetViewport(Renderer.EyeViewport[eyeIndex].ToViewportF());
+
+                    // Get the world and projection data for the plane
+                    var world = CalculatePlanePosition(eyeIndex);
+
+                    // Z-near and Z-far values aren't that important in this scene
+                    var projection = Renderer.GetEyeProjection(eyeIndex, 0.1f, 1000f);
+
+                    // Shader parameters
+                    var brightnessCoeffs = new Vector2(ImagePlane[0].Brightness, ImagePlane[1].Brightness);
+                    var flags = (eyeIndex == 1 ? 1 : 0)
+                                | (ImagePlane[0].IsImageMirrored ? 2 : 0)
+                                | (ImagePlane[1].IsImageMirrored ? 4 : 0)
+                                | (UISettings.CalibrationMode ? 8 : 0);
+
+                    // Render the image plane
+                    ImagePlane[eyeIndex].Render(GraphicsDevice, world, projection, flags, brightnessCoeffs);
+                }
             }
-
-            // Loop over both eyes
-            foreach (int eyeIndex in Renderer.GetEyeIndex())
+            catch (Exception ex)
             {
-                // Set Viewport for this eye
-                GraphicsDevice.SetViewport(Renderer.EyeViewport[eyeIndex].ToViewportF());
-
-                // Get the world and projection data for the plane
-                var world = CalculatePlanePosition(eyeIndex);
-
-                // Z-near and Z-far values aren't that important in this scene
-                var projection = Renderer.GetEyeProjection(eyeIndex, 0.1f, 1000f);
-
-                // Shader parameters
-                var brightnessCoeffs = new Vector2(ImagePlane[0].Brightness, ImagePlane[1].Brightness);
-                var flags = (eyeIndex == 1 ? 1 : 0)
-                    | (ImagePlane[0].IsImageMirrored ? 2 : 0)
-                    | (ImagePlane[1].IsImageMirrored ? 4 : 0)
-                    | (UISettings.CalibrationMode ? 8 : 0);
-
-                // Render the image plane
-                ImagePlane[eyeIndex].Render(GraphicsDevice, world, projection, flags, brightnessCoeffs);
+                FatalError(ex.Message);
             }
         }
 
@@ -426,6 +472,8 @@ namespace StereoScopica
                     Renderer.Dispose();
                 if (GraphicsDeviceManager != null)
                     GraphicsDeviceManager.Dispose();
+                if (TextureShader != null)
+                    TextureShader.Dispose();
             }
             _disposed = true;
             base.Dispose(disposing);
