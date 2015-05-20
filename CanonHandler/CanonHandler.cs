@@ -20,13 +20,13 @@ namespace CanonHandler
         // Needed to catch the console app's closing event
         [DllImport("Kernel32")]
         private static extern bool SetConsoleCtrlHandler(EventHandler handler, bool add);
-        private delegate bool EventHandler(CtrlType sig);
-        private readonly EventHandler _closeHandler;
+        protected delegate bool EventHandler(CtrlType sig);
+        protected EventHandler CloseHandler { get; set; }
 
         // Silence ReSharper enum complaints
         [SuppressMessage("ReSharper", "UnusedMember.Local")]
         [SuppressMessage("ReSharper", "InconsistentNaming")]
-        enum CtrlType
+        protected enum CtrlType
         {
           CTRL_C_EVENT = 0,
           CTRL_BREAK_EVENT = 1,
@@ -35,31 +35,31 @@ namespace CanonHandler
           CTRL_SHUTDOWN_EVENT = 6
         }
 
-        private readonly EDSDKWrapper _cameraWrapper;
-        private readonly PipeStream _pipeClient;
-        private readonly BinaryWriter _pipeWriter;
-        private readonly Settings _settings;
-        private readonly bool _initialized;
-        private bool _liveViewUpdating;
+        protected EDSDKWrapper CameraWrapper { get; set; }
+        protected PipeStream PipeClient { get; set; }
+        protected BinaryWriter PipeWriter { get; set; }
+        protected Settings Settings { get; set; }
+        protected bool LiveViewUpdating { get; set; }
+        protected bool Initialized { get; set; }
         private bool _disposed;
 
         public CanonHandler(Settings settings)
         {
-            _settings = settings;
+            Settings = settings;
             // safeguard against array index error (since the command line parser can't use uint fields (easily at least)
             if (settings.DeviceIndex < 0)
                 settings.DeviceIndex = 0;
 
             // Register the console close event handler
-            _closeHandler += CloseHandler;
-            SetConsoleCtrlHandler(_closeHandler, true);
+            CloseHandler += CloseEventHandler;
+            SetConsoleCtrlHandler(CloseHandler, true);
 
             try
             {
                 // Open the anonymous pipe to the host application for image transmission
-                _pipeClient = new AnonymousPipeClientStream(PipeDirection.Out, settings.PipeHandle);
+                PipeClient = new AnonymousPipeClientStream(PipeDirection.Out, settings.PipeHandle);
                 // Write wrapper
-                _pipeWriter = new BinaryWriter(_pipeClient);
+                PipeWriter = new BinaryWriter(PipeClient);
             }
             catch (IOException)
             {
@@ -74,11 +74,11 @@ namespace CanonHandler
             try
             {
                 // Initialize the canon sdk wrapper
-                _cameraWrapper = new EDSDKWrapper();
-                _cameraWrapper.CameraAdded += SearchForCamera;
-                _cameraWrapper.LiveViewUpdated += LiveViewUpdated;
-                _cameraWrapper.CameraHasShutdown += CameraHasShutdown;
-                _initialized = true;
+                CameraWrapper = new EDSDKWrapper();
+                CameraWrapper.CameraAdded += CameraAdded;
+                CameraWrapper.LiveViewUpdated += LiveViewUpdated;
+                CameraWrapper.CameraHasShutdown += CameraHasShutdown;
+                Initialized = true;
             }
             catch (Exception e)
             {
@@ -89,65 +89,75 @@ namespace CanonHandler
         // Start(): Program start. Starts the main application loop (message pump)
         public void Start()
         {
-            if (!_initialized)
+            if (!Initialized)
                 return;
             Console.WriteLine("Canon EOS camera handler for StereoScopica.");
             Console.WriteLine("Exit the main program to automatically shut down this handler.");
             Console.WriteLine();
-            Console.WriteLine("Searching for cameras...");
 
-            SearchForCamera();
+            // Only try to initialize the preferred device index at startup
+            List<Camera> camList = CameraWrapper.GetCameraList();
+            if (camList.Count > Settings.DeviceIndex)
+            {
+                Console.Write("Initializing camera #{0}...", Settings.DeviceIndex);
+                if (!InitializeCamera(camList[Settings.DeviceIndex]))
+                    Console.WriteLine("Error!\n-> Could not initialize the camera. Try to plug in the camera(s) again.");
+            }
+            else
+                Console.WriteLine("Not enough cameras plugged in. Waiting for camera #{0}.", Settings.DeviceIndex);
 
             // Enter the main application loop to enable event processing
             Application.Run();
 
         }
 
-        // SearchForCamera() iterates over the connected cameras, searches for the camera index (provided at the command line)
-        // and initializes the found camera using InitializeCamera()
-        private void SearchForCamera()
+        // CameraAdded() iterates over the connected cameras and tries to initialize each (it can be in use)
+        private void CameraAdded()
         {
             // Skip the event call if we have found our camera already
-            if (_cameraWrapper.CameraSessionOpen)
+            if (CameraWrapper.CameraSessionOpen)
                 return;
 
-            List<Camera> camList = _cameraWrapper.GetCameraList();
-            Console.WriteLine("Found {0} camera(s).", camList.Count);
+            List<Camera> camList = CameraWrapper.GetCameraList();
+            Console.WriteLine("A camera was plugged in! Found {0} camera(s).", camList.Count);
+
             for (int i = 0; i < camList.Count; i++)
             {
-                Console.WriteLine("Camera #{0}: \"{1}\"", i, camList[i].Info.szDeviceDescription);
+                Console.Write("Trying to initialize camera {0} \"{1}\"...", i+1, camList[i].Info.szDeviceDescription);
+                if (InitializeCamera(camList[i]))
+                    break;
             }
-            if (camList.Count > _settings.DeviceIndex)
-            {
-                Console.WriteLine("Initializing camera #{0}...", _settings.DeviceIndex);
-                InitializeCamera(camList[_settings.DeviceIndex]);
-            }
-            else
-                Console.WriteLine("Waiting for camera #{0}...", _settings.DeviceIndex);
         }
 
         // InitializeCamera() opens the camera session via the canon sdk wrapper, sets the right modes and starts the live view image feed
-        private void InitializeCamera(Camera camera)
+        private bool InitializeCamera(Camera camera)
         {
             try
             {
-                _cameraWrapper.OpenSession(camera);
-                _cameraWrapper.SetSetting(EDSDK.PropID_Av, CameraValues.AV(_settings.Av));
-                _cameraWrapper.SetSetting(EDSDK.PropID_Tv, CameraValues.TV(_settings.Tv));
-                _cameraWrapper.SetSetting(EDSDK.PropID_ISOSpeed, CameraValues.ISO(_settings.ISO));
-                _cameraWrapper.SetSetting(EDSDK.PropID_WhiteBalance, (uint)_settings.WB);
+                CameraWrapper.OpenSession(camera);
+                Console.Write("Done.\nAdjusting settings...");
+                CameraWrapper.SetSetting(EDSDK.PropID_Av, CameraValues.AV(Settings.Av));
+                CameraWrapper.SetSetting(EDSDK.PropID_Tv, CameraValues.TV(Settings.Tv));
+                CameraWrapper.SetSetting(EDSDK.PropID_ISOSpeed, CameraValues.ISO(Settings.ISO));
+                CameraWrapper.SetSetting(EDSDK.PropID_WhiteBalance, (uint)Settings.WB);
 
-                Console.WriteLine("Starting LiveView...");
-                _liveViewUpdating = false;
-                _cameraWrapper.StartLiveView();
+                Console.Write("Done.\nStarting LiveView...");
+                LiveViewUpdating = false;
+                CameraWrapper.StartLiveView();
 
-                if (!_cameraWrapper.IsLiveViewOn)
-                    Console.WriteLine("Error: LiveView dit not start for some reason.");
+                if (CameraWrapper.IsLiveViewOn)
+                {
+                    Console.WriteLine("Done.");
+                    return true;
+                }
+                Console.WriteLine("Error!\n-> LiveView dit not start for some reason.");
+
             }
             catch (Exception e)
             {
-                Console.WriteLine("ERROR: " + e);
+                Console.WriteLine("Error!\n-> " + e.Message);
             }
+            return false;
         }
 
         // LiveViewUpdated() is called from the canon sdk wrapper when a new image is read from the camera and is ready for processing
@@ -157,15 +167,15 @@ namespace CanonHandler
         private void LiveViewUpdated(Stream img)
         {
             // Check if first image
-            if (!_liveViewUpdating)
+            if (!LiveViewUpdating)
             {
                 Console.WriteLine("Received first image from camera. Enabling Depth of Field Preview.");
                 // Enable Depth of Field Preview mode for auto focus
                 // Enabling it now seems to work better than right after calling StartLiveView() (for some reason)
-                _cameraWrapper.SetSetting(EDSDK.PropID_Evf_DepthOfFieldPreview, 1);
-                _liveViewUpdating = true;
+                CameraWrapper.SetSetting(EDSDK.PropID_Evf_DepthOfFieldPreview, 1);
+                LiveViewUpdating = true;
             }
-            if (_pipeClient.IsConnected)
+            if (PipeClient.IsConnected)
             {
                 try
                 {
@@ -175,12 +185,12 @@ namespace CanonHandler
                     if (length <= 0)
                         return;
                     byte[] buffer = new byte[length];
-                    _pipeWriter.Write(length);
+                    PipeWriter.Write(length);
                     while ((written = img.Read(buffer, 0, buffer.Length)) != 0)
                     {
-                        _pipeWriter.Write(buffer, 0, written);
+                        PipeWriter.Write(buffer, 0, written);
                     }
-                    _pipeWriter.Flush();
+                    PipeWriter.Flush();
                 }
                 catch (IOException e)
                 {
@@ -191,7 +201,7 @@ namespace CanonHandler
             }
             else
             {
-                Console.WriteLine("Pipe is disconnected during image update, exiting...");
+                Console.WriteLine("Pipe disconnected during image update, exiting...");
                 CloseCamera();
                 Application.Exit();
             }
@@ -200,26 +210,26 @@ namespace CanonHandler
         // CameraHasShutdown() is called from the canon sdk wrapper
         private void CameraHasShutdown(object sender, EventArgs e)
         {
-            Console.WriteLine("The camera has shutdown.");
-            _liveViewUpdating = false;
+            Console.WriteLine("The camera was disconnected.");
+            LiveViewUpdating = false;
         }
 
         // Disconnect camera
         private void CloseCamera()
         {
-            if (!_cameraWrapper.CameraSessionOpen)
+            if (!CameraWrapper.CameraSessionOpen)
                 return;
-            if (!_cameraWrapper.IsLiveViewOn)
+            if (!CameraWrapper.IsLiveViewOn)
                 return;
             // Unset Depth of Field Preview to avoid errorous states in the camera
-            _cameraWrapper.SetSetting(EDSDK.PropID_Evf_DepthOfFieldPreview, 0);
-            _liveViewUpdating = false;
+            CameraWrapper.SetSetting(EDSDK.PropID_Evf_DepthOfFieldPreview, 0);
+            LiveViewUpdating = false;
             // Don't call CloseSession() here! The SetSetting call above will result in a exception in a different thread in the CanonEDSDKWrapper
             // The wrapper will call closesession when it is needed
         }
 
         // Windows close event handler: the application is terminating -> free memory
-        private bool CloseHandler(CtrlType sig)
+        private bool CloseEventHandler(CtrlType sig)
         {
             Dispose();
             return false;
@@ -235,17 +245,17 @@ namespace CanonHandler
         {
             if (_disposed)
                 return;
-            if (disposing && _initialized)
+            if (disposing && Initialized)
             {
                 try {
-                    _cameraWrapper.Dispose();
+                    CameraWrapper.Dispose();
                 }
                 catch (Exception e)
                 {
                     Console.WriteLine("EDSDK shutdown error: " + e);
                 }
-                _pipeWriter.Dispose();
-                _pipeClient.Dispose();
+                PipeWriter.Dispose();
+                PipeClient.Dispose();
             }
             _disposed = true;
         }
