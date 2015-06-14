@@ -165,6 +165,11 @@ namespace StereoScopica
             return projection;
         }
 
+        public TrackingState GetSensorData()
+        {
+            return HMD.GetTrackingState(0f);
+        }
+
         public void RecenterPose()
         {
             HMD.RecenterPose();

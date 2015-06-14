@@ -33,6 +33,11 @@ namespace StereoScopica
         public float HeadZNudgeAmount;
         public float BrightnessNudgeAmount;
 
+        // Enable to log sensor data to a text file
+        public bool LogSensorData;
+        // Logfile path (empty is application.startuppath)
+        public string LogPath;
+
         // UI key bindings
         [XmlIgnore]
         public Dictionary<Keys, Action> KeyActions = new Dictionary<Keys, Action>();

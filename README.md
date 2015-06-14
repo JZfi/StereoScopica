@@ -1,5 +1,11 @@
 StereoScopica
 =============
+Version 1.0.3
+- Feature: Logging support. HMD acc & gyro sensor data can now be logged to a csv file (F12). The logfile path can be set in the settings file.
+- Feature: Images can be moved up & down in the same direction (page up/down).
+- UI change: Some key mappings changed. Less used functions moved to char-keys.
+- UI change: Window title format change.
+
 Version 1.0.2
 - Feature: Shaders can now be reloaded (recompiled) by pressing the Delete-key
 - Bugfix: Chromatic distortion correction was commented out in the Renderer
@@ -31,6 +37,7 @@ Binaries can be downloaded from <http://jz.fi/stereoscopica/>
 Requirements
  - .NET Framework 4.0+
  - DirectX 11.0+
+ - A graphics card with DX 10 support
 
 This program has been tested on Windows 7 & 8.1. It should work on other Windows versions, but it won't work on other OS platforms. For technical reasons see the additional notes.
 
@@ -47,16 +54,18 @@ Keyboard shortcuts (there is no GUI):
 
     Esc      Exit the application
     Space    Reset HMD relative head position and orientation
-    Home     Toggle calibration mode
-    End      Reset the head position and stop updating it (from HMD data)
-    Delete   Reload the shaders
+    Pause    Toggle window update (if the result is also drawn to the desktop window in direct to rift mode)
 
+    Home     Reset plane's translation values
     Left     Nudge the images away from each other along the X-axis (by 0.025)
     Right    Nudge the images towards each other along the X-axis (by 0.025)
     Up       Nudge the images away from each other along the Y-axis (by 0.025)
     Down     Nudge the images towards each other along the Y-axis (by 0.025)
-    PageUp   Move the head away from the plane (by 0.05)
-    PageDown Move the head towards the plane (by 0.05)
+    PageUp   Nudge the images up along the Y-axis (by 0.025)
+    PageDown Nudge the images down along the Y-axis (by 0.025)
+
+    Add      Move the head away from the plane (by 0.05)
+    Subtract Move the head towards the plane (by 0.05)
 
     F1       Left image brightness multiplier down
     F2       Left image brightness multiplier up
@@ -69,9 +78,13 @@ Keyboard shortcuts (there is no GUI):
     F8       Toggle right image mirroring
 
     F9       Swap left & right image sources (doesn't work with the test images)
-    F10      Toggle window update (if the result is also drawn to the desktop window in direct to rift mode)
-    F11      Load test images onto the planes
-    F12      Save the raw camera images once
+    F10      Toggle calibration mode
+    F11      Reset the head position and stop updating it (from HMD data)
+    F12      Toggle sensor data logging (creates a new csv file when toggled on)
+
+    R        Reload the shaders
+    S        Save the raw camera images once
+    T        Load test images onto the planes
 
 The application state is saved to the user settings file on every exit. If you want to reset the settings or ensure
 that the same values are used each time replace or delete the file and re-run.
@@ -80,10 +93,14 @@ that the same values are used each time replace or delete the file and re-run.
 
 Calibration mode
 ----------------
-
 The calibration mode can be toggled with the *Home*-key. It shows the color difference between the left & right images (left: L-R, right: R-L). When the images are identical the result is a black image. This can be achieved using a mirror box camera rig and the black result equals to identically aligned cameras. To test if the distance between the cameras equals to the wanted IPD (interpupillary distance) print out a checkerboard pattern with the IPD as the checker size (e.g. 64 mm rectangles). When the black & white borders match (align side to side) the cameras are aligned properly. 
 
 You can use the Checkerboard Maker <http://www.cs.unc.edu/~adyilie/Research/CheckerboardMaker/> to achieve this easily. 
+
+
+Sensor data logging
+-------------------
+TODO
 
 
 How to compile
@@ -145,6 +162,8 @@ Known bugs
 ----------
 - Test images don't work if the cameras are in use (pressing F11 triggers one image frame update, but the camera's next image update will override it).
 - Sometimes the LiveView mode is turned on but no images are received. This is either a bug in the EDSDK library or in the used wrapper code. The library is unstable and sometimes ends up in a state that needs a program restart. This tends to happen if you shutdown the camera while it is plugged in.
+- Sometimes the key presses don't respond (every 2nd image save press, logging toggle after an exception). No idea why.
+
 
 Additional notes
 ----------------

@@ -6,6 +6,7 @@
 // ReSharper disable once RedundantUsingDirective
 using System.Diagnostics;
 using System;
+using System.Globalization;
 using System.Windows.Forms;
 using System.IO;
 using System.Linq;
@@ -36,6 +37,31 @@ namespace StereoScopica
         protected TextureShader TextureShader { get; private set; }
         protected KeyboardManager Keyboard { get; private set; }
         protected GraphicsDeviceManager GraphicsDeviceManager { get; private set; }
+        // Logfile writer
+        protected FormatStreamWriter LogFile
+        {
+            // Opens a new file if no stream is present
+            get
+            {
+                return _logFile ??
+                       (_logFile = new FormatStreamWriter(
+                               Path.Combine(
+                                   String.IsNullOrEmpty(UISettings.LogPath)
+                                       ? Application.StartupPath
+                                       : UISettings.LogPath,
+                                   String.Format("log_{0}.csv", DateTime.Now.ToString("yyyyMMdd_HHmmss"))
+                               ), CultureInfo.InvariantCulture));
+            }
+            // Setting the stream to null will close the stream properly
+            set
+            {
+                if (_logFile != null)
+                    _logFile.Close();
+                 _logFile = value;
+            }
+        }
+
+        private FormatStreamWriter _logFile;
         private bool _disposed;
 
         public StereoScopica()
@@ -119,7 +145,8 @@ namespace StereoScopica
                     TestImageLeft = Path.Combine("Assets", "TestL.jpg"),
                     TestImageRight = Path.Combine("Assets", "TestR.jpg"),
                     SaveImageLeft = "imageL.jpg",
-                    SaveImageRight = "imageR.jpg"
+                    SaveImageRight = "imageR.jpg",
+                    LogPath = ""
                 };
                 // Create two camera handlers and image planes
                 for (uint i = 0; i < ImagePlane.Length; i++)
@@ -195,37 +222,42 @@ namespace StereoScopica
         protected void RegisterKeyActions()
         {
             // Moves the image planes towards or away from each other
-            var moveImagePlanes = new Action<Matrix>(translation =>
+            var moveImagePlanes = new Action<Matrix, bool>((translation, inverse) =>
             {
                 ImagePlane[0].Transformation *= translation;
                 // Inverse the other translation
-                ImagePlane[1].Transformation *= Matrix.Translation(translation.TranslationVector * -1f);
+                if (inverse)
+                    ImagePlane[1].Transformation *= Matrix.Translation(translation.TranslationVector * -1f);
+                else
+                    ImagePlane[1].Transformation *= translation;
             });
 
             // Exit the application
             UISettings.KeyActions[Keys.Escape] = Exit;
             // Reset HMD relative head position and orientation
             UISettings.KeyActions[Keys.Space] = Renderer.RecenterPose;
-            // Toggle calibration mode
-            UISettings.KeyActions[Keys.Home] = () => { UISettings.CalibrationMode = !UISettings.CalibrationMode; };
-            // Reset the head position and stop updating it (from HMD data)
-            UISettings.KeyActions[Keys.End] = () => { UISettings.DoNotUpdateHeadPositionAndOrientation = !UISettings.DoNotUpdateHeadPositionAndOrientation; };
-            // Reload the shaders
-            UISettings.KeyActions[Keys.Delete] = ReloadPlaneShaders;
+            // Toggle window update (if the result is also drawn to the desktop window in direct to rift mode)
+            UISettings.KeyActions[Keys.Pause] = Renderer.ToggleDrawToWindow;
 
+            // Reset planes' translation
+            UISettings.KeyActions[Keys.Home] = () => { foreach (var plane in ImagePlane) plane.Transformation = Matrix.Translation(0f, 0f, 0f); };
             // Nudge the images away from each other along the X-axis
-            UISettings.KeyActions[Keys.Left] = () => moveImagePlanes(Matrix.Translation(-UISettings.PlaneXYNudgeAmount, 0f, 0f));
+            UISettings.KeyActions[Keys.Left] = () => moveImagePlanes(Matrix.Translation(-UISettings.PlaneXYNudgeAmount, 0f, 0f), true);
             // Nudge the images towards each other along the X-axis
-            UISettings.KeyActions[Keys.Right] = () => moveImagePlanes(Matrix.Translation(UISettings.PlaneXYNudgeAmount, 0f, 0f));
+            UISettings.KeyActions[Keys.Right] = () => moveImagePlanes(Matrix.Translation(UISettings.PlaneXYNudgeAmount, 0f, 0f), true);
             // Nudge the images away from each other along the Y-axis
-            UISettings.KeyActions[Keys.Up] = () => moveImagePlanes(Matrix.Translation(0f, UISettings.PlaneXYNudgeAmount, 0f));
+            UISettings.KeyActions[Keys.Up] = () => moveImagePlanes(Matrix.Translation(0f, UISettings.PlaneXYNudgeAmount, 0f), true);
             // Nudge the images towards each other along the Y-axis
-            UISettings.KeyActions[Keys.Down] = () => moveImagePlanes(Matrix.Translation(0f, -UISettings.PlaneXYNudgeAmount, 0f));
+            UISettings.KeyActions[Keys.Down] = () => moveImagePlanes(Matrix.Translation(0f, -UISettings.PlaneXYNudgeAmount, 0f), true);
+            // Nudge the images up along the Y-axis
+            UISettings.KeyActions[Keys.PageUp] = () => moveImagePlanes(Matrix.Translation(0f, UISettings.PlaneXYNudgeAmount, 0f), false);
+            // Nudge the images down along the Y-axis
+            UISettings.KeyActions[Keys.PageDown] = () => moveImagePlanes(Matrix.Translation(0f, -UISettings.PlaneXYNudgeAmount, 0f), false);
 
             // Move the head away from the plane
-            UISettings.KeyActions[Keys.PageUp] = () => UISettings.HeadPositionRelativeToPlane.Z += UISettings.HeadZNudgeAmount;
+            UISettings.KeyActions[Keys.Add] = () => UISettings.HeadPositionRelativeToPlane.Z += UISettings.HeadZNudgeAmount;
             // Move the head towards the plane
-            UISettings.KeyActions[Keys.PageDown] = () => UISettings.HeadPositionRelativeToPlane.Z -= UISettings.HeadZNudgeAmount;
+            UISettings.KeyActions[Keys.Subtract] = () => UISettings.HeadPositionRelativeToPlane.Z -= UISettings.HeadZNudgeAmount;
 
             // Left image brightness multiplier down
             UISettings.KeyActions[Keys.F1] = () => ImagePlane[0].Brightness -= UISettings.BrightnessNudgeAmount;
@@ -247,16 +279,29 @@ namespace StereoScopica
 
             // Swap left & right image sources (doesn't work with the test images)
             UISettings.KeyActions[Keys.F9] = () => UISettings.SwapImageSources = !UISettings.SwapImageSources;
-            // Toggle window update (if the result is also drawn to the desktop window in direct to rift mode)
-            UISettings.KeyActions[Keys.F10] = Renderer.ToggleDrawToWindow;
-            // Load test images onto the planes
-            UISettings.KeyActions[Keys.F11] = ShowTestImages;
-            // Save the raw camera images once
+            // Toggle calibration mode
+            UISettings.KeyActions[Keys.F10] = () => { UISettings.CalibrationMode = !UISettings.CalibrationMode; };
+            // Reset the head position and stop updating it (from HMD data)
+            UISettings.KeyActions[Keys.F11] = () => { UISettings.DoNotUpdateHeadPositionAndOrientation = !UISettings.DoNotUpdateHeadPositionAndOrientation; };
+            // Toggle sensor data logging
             UISettings.KeyActions[Keys.F12] = () =>
+            {
+                UISettings.LogSensorData = !UISettings.LogSensorData;
+                // Close the file if toggled off
+                if (!UISettings.LogSensorData)
+                    LogFile = null;
+            };
+
+            // Reload the shaders
+            UISettings.KeyActions[Keys.R] = ReloadPlaneShaders;
+            // Save the raw camera images once
+            UISettings.KeyActions[Keys.S] = () =>
             {
                 foreach (var c in CameraHandler)
                     c.ImageUpdated += SaveImageOnceEvent;
             };
+            // Load test images onto the planes
+            UISettings.KeyActions[Keys.T] = ShowTestImages;
         }
 
         //////////////////////////////////////////////////////////////
@@ -328,6 +373,8 @@ namespace StereoScopica
             HandleUIEvents();
             // Update title stats
             UpdateWindowTitle();
+            if (UISettings.LogSensorData)
+                LogSensorData();
         }
 
         //////////////////////////////////////////////////////////////
@@ -356,8 +403,11 @@ namespace StereoScopica
             e.Image.Position = 0;
             // Check which CameraHandler gave us the image to update the right image plane (depending on the swap image toggle)
             for (var i = 0; i < CameraHandler.Length; i++)
-                if (CameraHandler[i].Equals(sender))
-                    ImagePlane[(UISettings.SwapImageSources == Convert.ToBoolean(i) ? 0 : 1)].SetImage(e.Image);
+            {
+                if (!CameraHandler[i].Equals(sender)) continue;
+                ImagePlane[(UISettings.SwapImageSources == Convert.ToBoolean(i) ? 0 : 1)].SetImage(e.Image);
+                break;
+            }
         }
 
         // Save the camera image onto disk and remove the handler from the ImageUpdated event
@@ -426,13 +476,38 @@ namespace StereoScopica
             }
         }
 
+        // Log sensor data to a text file
+        // The LogFile property getter will create the stream
+        protected void LogSensorData()
+        {
+            try
+            {
+                var data = Renderer.GetSensorData().RawSensorData;
+                LogFile.WriteLine("{0},{1},{2},{3},{4},{5},{6}",
+                    DateTime.Now.ToString("HH:mm:ss.fff"), data.Accelerometer.X, data.Accelerometer.Y,
+                    data.Accelerometer.Z, data.Gyro.X, data.Gyro.Y, data.Gyro.Z);
+            }
+            catch (Exception ex)
+            {
+                UISettings.LogSensorData = false;
+                ShowMessage("Logging stopped. Error: " + ex.Message);
+            }
+        }
+
         // Update window title statistics
         // This is not wise in any way, but the easiest way to get some info onto the screen without DX DirectWrite
         protected void UpdateWindowTitle()
         {
-            Window.Title = Application.ProductName + ": FPS screen/L/R " + Renderer.FPS + "/" + ImagePlane[0].FPS + "/" + ImagePlane[1].FPS +
-               ", Mirrored + Brightness L/R: " + (ImagePlane[0].IsImageMirrored ? "M" : "m") + ImagePlane[0].Brightness + "/" + (ImagePlane[1].IsImageMirrored ? "M" : "m") + ImagePlane[1].Brightness +
-               ", Settings: " + (UISettings.SwapImageSources ? "S" : "s") + ":" + (UISettings.CalibrationMode ? "C" : "c") + ":" + (UISettings.DoNotUpdateHeadPositionAndOrientation ? "D" : "d");
+
+            Window.Title =
+                String.Format(CultureInfo.InvariantCulture,
+                    "{0} fps: {1}, Image fps: {2}/{3} (L/R), Brightness {4:f}/{5:f} (L/R), Head Z: {6:##.000}, Settings: {7}{8}{9}{10}",
+                    Application.ProductName, Renderer.FPS, ImagePlane[0].FPS, ImagePlane[1].FPS,
+                    ImagePlane[0].Brightness, ImagePlane[1].Brightness,
+                    UISettings.HeadPositionRelativeToPlane.Z,
+                    (UISettings.SwapImageSources ? "Swapped " : ""), (UISettings.CalibrationMode ? "Calibration " : ""),
+                    (UISettings.DoNotUpdateHeadPositionAndOrientation ? "NoTracking " : ""), (UISettings.LogSensorData ? "Logging" : "")
+                );
         }
 
         // Show message on screen or print it to debug output
@@ -474,9 +549,29 @@ namespace StereoScopica
                     GraphicsDeviceManager.Dispose();
                 if (TextureShader != null)
                     TextureShader.Dispose();
+                // The LogFile setter will close the open handle
+                LogFile = null;
             }
             _disposed = true;
             base.Dispose(disposing);
+        }
+    }
+
+    public class FormatStreamWriter : StreamWriter
+    {
+        private readonly IFormatProvider _formatProvider;
+
+        public FormatStreamWriter(string path, IFormatProvider formatProvider)
+            : base(path)
+        {
+            _formatProvider = formatProvider;
+        }
+        public override IFormatProvider FormatProvider
+        {
+            get
+            {
+                return _formatProvider;
+            }
         }
     }
 }
