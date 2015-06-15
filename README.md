@@ -1,7 +1,7 @@
 StereoScopica
 =============
 Version 1.0.3
-- Feature: Logging support. HMD acc & gyro sensor data can now be logged to a csv file (F12). The logfile path can be set in the settings file.
+- Feature: Sensor logging support. Rift's acc & gyro data can now be logged to a csv file. Toggle logging on/off by pressing F12. The logfile path can be set in the settings file.
 - Feature: Images can be moved up & down in the same direction (page up/down).
 - UI change: Some key mappings changed. Less used functions moved to char-keys.
 - UI change: Window title format change.
@@ -44,7 +44,7 @@ This program has been tested on Windows 7 & 8.1. It should work on other Windows
 
 How to use
 ----------
-To see some action: Run StereoScopica.exe and press F11 to load the provided test images.
+To see some action: Run StereoScopica.exe and press *T* to load the provided test images.
 
 The cameras will be automatically recognized when you plug them in. If the cameras stop working or are not recognized try to unplug the usb cables (both) or turn the cameras off & on again.
 
@@ -79,7 +79,7 @@ Keyboard shortcuts (there is no GUI):
 
     F9       Swap left & right image sources (doesn't work with the test images)
     F10      Toggle calibration mode
-    F11      Reset the head position and stop updating it (from HMD data)
+    F11      Reset the head pos&orientation and stop updating it (from HMD data)
     F12      Toggle sensor data logging (creates a new csv file when toggled on)
 
     R        Reload the shaders
@@ -93,14 +93,17 @@ that the same values are used each time replace or delete the file and re-run.
 
 Calibration mode
 ----------------
-The calibration mode can be toggled with the *Home*-key. It shows the color difference between the left & right images (left: L-R, right: R-L). When the images are identical the result is a black image. This can be achieved using a mirror box camera rig and the black result equals to identically aligned cameras. To test if the distance between the cameras equals to the wanted IPD (interpupillary distance) print out a checkerboard pattern with the IPD as the checker size (e.g. 64 mm rectangles). When the black & white borders match (align side to side) the cameras are aligned properly. 
+The calibration mode can be toggled with the *F10*-key. It shows the color difference between the left & right images (left: L-R, right: R-L). When the images are identical the result is a black image. This can be achieved using a mirror box camera rig and the black result equals to identically aligned cameras. To test if the distance between the cameras equals to the wanted IPD (interpupillary distance) print out a checkerboard pattern with the IPD as the checker size (e.g. 64 mm rectangles). When the black & white borders match (align side to side) the cameras are aligned properly. 
 
 You can use the Checkerboard Maker <http://www.cs.unc.edu/~adyilie/Research/CheckerboardMaker/> to achieve this easily. 
 
 
 Sensor data logging
 -------------------
-TODO
+Rift's acceleration and gyro sensor data can be logged to a csv-file by pressing *F12*. A new logfile will be created in the executable's directory every time logging is toggled on. The files are named using the format *log_yyyyMMdd_HHmmss.csv*. The logfile directory can be changed by setting the LogFilePath-key (<LogFilePath>c:\logs</LogFilePath) in the user settings file. An empty value (<LogFilePath />) tells the application to use the executable directory. 
+
+Logfile format: Timestamp(HH:mm:ss.fff),Acc.X,Acc.Y,Acc.Z,Gyro.X,Gyro.Y,Gyro.Z
+The sensor data is queried and logged on every Update() call. Sample rate is limited to the drawn frames per second (and will fluctuate).
 
 
 How to compile

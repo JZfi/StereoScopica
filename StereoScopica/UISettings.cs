@@ -36,7 +36,7 @@ namespace StereoScopica
         // Enable to log sensor data to a text file
         public bool LogSensorData;
         // Logfile path (empty is application.startuppath)
-        public string LogPath;
+        public string LogFilePath;
 
         // UI key bindings
         [XmlIgnore]

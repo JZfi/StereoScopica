@@ -46,9 +46,9 @@ namespace StereoScopica
                 return _logFile ??
                        (_logFile = new FormatStreamWriter(
                                Path.Combine(
-                                   String.IsNullOrEmpty(UISettings.LogPath)
+                                   String.IsNullOrEmpty(UISettings.LogFilePath)
                                        ? Application.StartupPath
-                                       : UISettings.LogPath,
+                                       : UISettings.LogFilePath,
                                    String.Format("log_{0}.csv", DateTime.Now.ToString("yyyyMMdd_HHmmss"))
                                ), CultureInfo.InvariantCulture));
             }
@@ -146,7 +146,7 @@ namespace StereoScopica
                     TestImageRight = Path.Combine("Assets", "TestR.jpg"),
                     SaveImageLeft = "imageL.jpg",
                     SaveImageRight = "imageR.jpg",
-                    LogPath = ""
+                    LogFilePath = ""
                 };
                 // Create two camera handlers and image planes
                 for (uint i = 0; i < ImagePlane.Length; i++)
