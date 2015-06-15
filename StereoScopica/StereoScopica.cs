@@ -62,6 +62,7 @@ namespace StereoScopica
         }
 
         private FormatStreamWriter _logFile;
+        private bool _showTestImages;
         private bool _disposed;
 
         public StereoScopica()
@@ -231,7 +232,7 @@ namespace StereoScopica
                 else
                     ImagePlane[1].Transformation *= translation;
             });
-
+            
             // Exit the application
             UISettings.KeyActions[Keys.Escape] = Exit;
             // Reset HMD relative head position and orientation
@@ -283,25 +284,14 @@ namespace StereoScopica
             UISettings.KeyActions[Keys.F10] = () => { UISettings.CalibrationMode = !UISettings.CalibrationMode; };
             // Reset the head position and stop updating it (from HMD data)
             UISettings.KeyActions[Keys.F11] = () => { UISettings.DoNotUpdateHeadPositionAndOrientation = !UISettings.DoNotUpdateHeadPositionAndOrientation; };
-            // Toggle sensor data logging
-            UISettings.KeyActions[Keys.F12] = () =>
-            {
-                UISettings.LogSensorData = !UISettings.LogSensorData;
-                // Close the file if toggled off
-                if (!UISettings.LogSensorData)
-                    LogFile = null;
-            };
+            UISettings.KeyActions[Keys.F12] = ToggleTestImages;
 
+            // Toggle sensor data logging. Closes the file if toggled off by setting LogFile to null
+            UISettings.KeyActions[Keys.L] = () => { if (!(UISettings.LogSensorData = !UISettings.LogSensorData)) LogFile = null; };
             // Reload the shaders
             UISettings.KeyActions[Keys.R] = ReloadPlaneShaders;
             // Save the raw camera images once
-            UISettings.KeyActions[Keys.S] = () =>
-            {
-                foreach (var c in CameraHandler)
-                    c.ImageUpdated += SaveImageOnceEvent;
-            };
-            // Load test images onto the planes
-            UISettings.KeyActions[Keys.T] = ShowTestImages;
+            UISettings.KeyActions[Keys.S] = () => { foreach (var c in CameraHandler) c.ImageUpdated += SaveImageOnceEvent; };
         }
 
         //////////////////////////////////////////////////////////////
@@ -380,7 +370,16 @@ namespace StereoScopica
         //////////////////////////////////////////////////////////////
         /// Helper methods (run-time use) below
         //////////////////////////////////////////////////////////////
-        
+        // Check input & update the UI (executes the Action delegates)
+        protected void HandleUIEvents()
+        {
+            // Check for pressed keys where the key exits in the KeyActions dictionary (LINQ Where returns only the satisfied elements)
+            var keyboardState = Keyboard.GetState();
+            foreach (var keyAction in UISettings.KeyActions.Where(keyAction => keyboardState.IsKeyPressed(keyAction.Key)))
+                // Call its associated action (the foreach returns a temporary key-value pair)
+                keyAction.Value();
+        }
+
         // Returns the plane transform matrix for the given eye (plane position in world space)
         protected Matrix CalculatePlanePosition(int eyeIndex)
         {
@@ -442,19 +441,21 @@ namespace StereoScopica
             }
         }
 
-        // Check input & update the UI (executes the Action delegates)
-        protected void HandleUIEvents()
-        {
-            // Check for pressed keys where the key exits in the KeyActions dictionary (LINQ Where returns only the satisfied elements)
-            var keyboardState = Keyboard.GetState();
-            foreach (var keyAction in UISettings.KeyActions.Where(keyAction => keyboardState.IsKeyPressed(keyAction.Key)))
-                // Call its associated action (the foreach returns a temporary key-value pair)
-                keyAction.Value();
-        }
-
         // Test images' filenames are stored in the user settings file
-        protected void ShowTestImages()
+        protected void ToggleTestImages()
         {
+            _showTestImages = !_showTestImages;
+            foreach (CameraHandler handler in CameraHandler)
+                if (_showTestImages)
+                    // Remove the image update handler from the camera handler to disable image overwrites
+                    handler.ImageUpdated -= ImageUpdateEvent;
+                else
+                    // Add the image update handler to enable image updates
+                    handler.ImageUpdated += ImageUpdateEvent;
+
+            if (!_showTestImages) return;
+
+            // Load and show the images
             try
             {
                 for (var i = 0; i < ImagePlane.Length; i++)
@@ -501,9 +502,9 @@ namespace StereoScopica
 
             Window.Title =
                 String.Format(CultureInfo.InvariantCulture,
-                    "{0} fps: {1}, Image fps: {2}/{3} (L/R), Brightness {4:f}/{5:f} (L/R), Head Z: {6:##.000}, Settings: {7}{8}{9}{10}",
+                    "{0} fps: {1}. Image (L/R) fps: {2}/{3}, Brightness: {4:f}/{5:f}, Mirrored: {6}/{7}. Head Z: {8:##.000}. Settings: {9}{10}{11}{12}",
                     Application.ProductName, Renderer.FPS, ImagePlane[0].FPS, ImagePlane[1].FPS,
-                    ImagePlane[0].Brightness, ImagePlane[1].Brightness,
+                    ImagePlane[0].Brightness, ImagePlane[1].Brightness, ImagePlane[0].IsImageMirrored, ImagePlane[1].IsImageMirrored,
                     UISettings.HeadPositionRelativeToPlane.Z,
                     (UISettings.SwapImageSources ? "Swapped " : ""), (UISettings.CalibrationMode ? "Calibration " : ""),
                     (UISettings.DoNotUpdateHeadPositionAndOrientation ? "NoTracking " : ""), (UISettings.LogSensorData ? "Logging" : "")

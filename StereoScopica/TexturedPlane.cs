@@ -65,7 +65,7 @@ namespace StereoScopica
         // SetImage() updates the Image property and flags the image as updated (thread safe).
         public void SetImage(Stream img)
         {
-            if (img.Length == 0)
+            if (img == null || img.Length == 0)
                 return;
             try
             {

@@ -1,13 +1,15 @@
 StereoScopica
 =============
 Version 1.0.3
-- Feature: Sensor logging support. Rift's acc & gyro data can now be logged to a csv file. Toggle logging on/off by pressing F12. The logfile path can be set in the settings file.
+- Feature: Sensor logging support. Rift's acc & gyro data can now be logged to a csv file. Toggle logging on/off by pressing *L*. The logfile path can be set in the settings file.
 - Feature: Images can be moved up & down in the same direction (page up/down).
-- UI change: Some key mappings changed. Less used functions moved to char-keys.
+- Bugfix: Test images are now shown even if the cameras are active (the images aren't overwritten).
+- UI change: Some key mappings changed. Less used functions moved to letter-keys.
 - UI change: Window title format change.
+- Code change: Some safety checks added.
 
 Version 1.0.2
-- Feature: Shaders can now be reloaded (recompiled) by pressing the Delete-key
+- Feature: Shaders can now be reloaded (recompiled) by pressing the Delete-key (v1.0.3: *R*-key).
 - Bugfix: Chromatic distortion correction was commented out in the Renderer
 - Bugfix: The CanonHandler will now properly iterate over all devices and try to connect to them by force. This reduces manual camera reconnecting.
 - Cleanup: Shader files had the UTF-8 BOM character in them
@@ -44,7 +46,7 @@ This program has been tested on Windows 7 & 8.1. It should work on other Windows
 
 How to use
 ----------
-To see some action: Run StereoScopica.exe and press *T* to load the provided test images.
+To see some action: Run StereoScopica.exe and press *F12* to load the provided test images.
 
 The cameras will be automatically recognized when you plug them in. If the cameras stop working or are not recognized try to unplug the usb cables (both) or turn the cameras off & on again.
 
@@ -80,11 +82,11 @@ Keyboard shortcuts (there is no GUI):
     F9       Swap left & right image sources (doesn't work with the test images)
     F10      Toggle calibration mode
     F11      Reset the head pos&orientation and stop updating it (from HMD data)
-    F12      Toggle sensor data logging (creates a new csv file when toggled on)
+    F12      Load test images onto the planes
 
+    L        Toggle sensor data logging (creates a new csv file when toggled on)
     R        Reload the shaders
     S        Save the raw camera images once
-    T        Load test images onto the planes
 
 The application state is saved to the user settings file on every exit. If you want to reset the settings or ensure
 that the same values are used each time replace or delete the file and re-run.
@@ -100,7 +102,7 @@ You can use the Checkerboard Maker <http://www.cs.unc.edu/~adyilie/Research/Chec
 
 Sensor data logging
 -------------------
-Rift's acceleration and gyro sensor data can be logged to a csv-file by pressing *F12*. A new logfile will be created in the executable's directory every time logging is toggled on. The files are named using the format *log_yyyyMMdd_HHmmss.csv*. The logfile directory can be changed by setting the LogFilePath-key (<LogFilePath>c:\logs</LogFilePath) in the user settings file. An empty value (<LogFilePath />) tells the application to use the executable directory. 
+Rift's acceleration and gyro sensor data can be logged to a csv-file by pressing the *L*-key. A new logfile will be created in the executable's directory every time logging is toggled on. The files are named using the format *log_yyyyMMdd_HHmmss.csv*. The logfile directory can be changed by setting the LogFilePath-key (<LogFilePath>c:\logs</LogFilePath) in the user settings file. An empty value (<LogFilePath />) tells the application to use the executable directory. 
 
 Logfile format: Timestamp(HH:mm:ss.fff),Acc.X,Acc.Y,Acc.Z,Gyro.X,Gyro.Y,Gyro.Z
 The sensor data is queried and logged on every Update() call. Sample rate is limited to the drawn frames per second (and will fluctuate).
@@ -163,7 +165,6 @@ The camera settings are passed via the command line. The LiveView-mode is starte
 
 Known bugs
 ----------
-- Test images don't work if the cameras are in use (pressing F11 triggers one image frame update, but the camera's next image update will override it).
 - Sometimes the LiveView mode is turned on but no images are received. This is either a bug in the EDSDK library or in the used wrapper code. The library is unstable and sometimes ends up in a state that needs a program restart. This tends to happen if you shutdown the camera while it is plugged in.
 - Sometimes the key presses don't respond (every 2nd image save press, logging toggle after an exception). No idea why.
 
